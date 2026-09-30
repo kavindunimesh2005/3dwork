@@ -54,13 +54,29 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
         setLoading(true);
         setError(null);
 
-        // Check if MindAR is loaded
-        if (!window.MINDAR || !window.MINDAR.IMAGE || !window.MINDAR.IMAGE.MindARThree) {
-          throw new Error("MindAR library is loading or not supported on this device.");
+        // 1. Check Camera Media Devices
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("Your browser does not support camera access (getUserMedia). Please open in Chrome or Safari with HTTPS/localhost.");
         }
 
-        // Initialize MindAR Three
-        mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        // 2. Poll for window.MINDAR.IMAGE.MindARThree
+        let MindARThreeClass = null;
+        for (let i = 0; i < 40; i++) {
+          if (window.MINDAR && window.MINDAR.IMAGE && window.MINDAR.IMAGE.MindARThree) {
+            MindARThreeClass = window.MINDAR.IMAGE.MindARThree;
+            break;
+          }
+          await new Promise(r => setTimeout(r, 100));
+        }
+
+        if (!MindARThreeClass) {
+          throw new Error("MindAR WebAR library could not be loaded. Please refresh the page.");
+        }
+
+        if (isCancelled || !containerRef.current) return;
+
+        // 3. Initialize MindAR Three
+        mindarThree = new MindARThreeClass({
           container: containerRef.current,
           imageTargetSrc: '/targets/card.mind',
           filterMinCF: 0.0001,
@@ -71,7 +87,7 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
 
         const { renderer, scene, camera } = mindarThree;
 
-        // Build Kingdom 3D Pop-Up World
+        // 4. Build Kingdom 3D Pop-Up World
         const world = createKingdomWorld();
         worldRef.current = world;
         world.setChapterTheme(chapter);
@@ -79,7 +95,7 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
         const anchor = mindarThree.addAnchor(0);
         anchor.group.add(world.group);
 
-        // Target Detection Listeners
+        // 5. Target Detection Listeners
         anchor.onTargetFound = () => {
           if (isCancelled) return;
           setTargetFound(true);
@@ -94,7 +110,7 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
           world.setVisible(false);
         };
 
-        // Start MindAR camera tracking
+        // 6. Start Camera Stream & AR Engine
         await mindarThree.start();
 
         if (isCancelled) {
@@ -105,7 +121,7 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
         mindarRef.current = mindarThree;
         setLoading(false);
 
-        // Render Loop
+        // 7. Render Loop
         renderer.setAnimationLoop(() => {
           world.update();
           renderer.render(scene, camera);
@@ -113,7 +129,7 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
       } catch (err) {
         console.error("WebAR Start Error:", err);
         if (!isCancelled) {
-          setError(err.message || "Failed to access camera or load AR tracker.");
+          setError(err.message || "Camera access was denied or device camera is busy.");
           setLoading(false);
         }
       }
@@ -127,10 +143,10 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
       if (mindarRef.current) {
         try {
           const { renderer } = mindarRef.current;
-          renderer.setAnimationLoop(null);
+          if (renderer) renderer.setAnimationLoop(null);
           mindarRef.current.stop();
         } catch (e) {
-          console.warn("Cleanup error:", e);
+          console.warn("AR cleanup notice:", e);
         }
       }
     };
@@ -162,11 +178,11 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
       <div ref={containerRef} className="ar-video-viewport" />
 
       {/* Loading Overlay */}
-      {loading && (
+      {loading && !error && (
         <div className="ar-status-card">
           <div className="spinner" />
           <h3>INITIALIZING AR CAMERA...</h3>
-          <p>Please allow camera permissions if prompted.</p>
+          <p>කරුණාකර Browser එකෙන් Camera Permission Allow කරන්න.</p>
         </div>
       )}
 
@@ -176,7 +192,9 @@ export function WebARCameraView({ chapter, onChapterChange, onExit, onOpenMarker
           <div className="error-icon">⚠️</div>
           <h3>Camera / AR Notice</h3>
           <p>{error}</p>
-          <p className="small-text">You can still explore the full 3D interactive story in 3D Mode!</p>
+          <p className="small-text" style={{ marginTop: '0.6rem', color: '#cbd5e0' }}>
+            Browser එකේ Camera icon එක click කර Allow permission ලබා දෙන්න හෝ 3D Mode එකෙන් explore කරන්න.
+          </p>
           <div className="btn-group">
             <button className="primary" onClick={onExit}>SWITCH TO 3D MODE</button>
             <button className="ghost" onClick={() => window.location.reload()}>RETRY CAMERA</button>
